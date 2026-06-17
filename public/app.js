@@ -11,6 +11,10 @@ const elements = {
   copyLinkButton: document.querySelector("#copyLinkButton"),
   resetButton: document.querySelector("#resetButton"),
   soundButton: document.querySelector("#soundButton"),
+  confirmMoveCard: document.querySelector("#confirmMoveCard"),
+  pendingMoveText: document.querySelector("#pendingMoveText"),
+  confirmMoveButton: document.querySelector("#confirmMoveButton"),
+  cancelMoveButton: document.querySelector("#cancelMoveButton"),
   matchStatus: document.querySelector("#matchStatus"),
   blackPlayer: document.querySelector("#blackPlayer"),
   whitePlayer: document.querySelector("#whitePlayer"),
@@ -37,6 +41,7 @@ const state = {
   cellGap: 0,
   boardStart: 0,
   boardEnd: 0,
+  pendingMoveIndex: null,
   lastMoveCount: null,
   lastWinner: null,
   lastTurn: null,
@@ -118,10 +123,35 @@ canvas.addEventListener("click", event => {
   unlockAudio();
   const index = getIndexFromEvent(event);
   if (index === null) return;
+  if (shouldConfirmMove()) {
+    setPendingMove(index);
+    return;
+  }
   send({ type: "move", index });
 });
 
-window.addEventListener("resize", drawBoard);
+elements.confirmMoveButton.addEventListener("click", () => {
+  unlockAudio();
+  if (state.pendingMoveIndex === null) return;
+  if (!canPlaceAt(state.pendingMoveIndex)) {
+    clearPendingMove();
+    showToast("这个位置现在不能落子。");
+    return;
+  }
+  send({ type: "move", index: state.pendingMoveIndex });
+  clearPendingMove();
+});
+
+elements.cancelMoveButton.addEventListener("click", clearPendingMove);
+
+window.addEventListener("resize", () => {
+  if (!shouldConfirmMove()) {
+    clearPendingMove();
+  } else {
+    syncPendingMove();
+  }
+  drawBoard();
+});
 
 function joinPrivateGame() {
   localStorage.setItem("gomokuName", getPlayerName());
@@ -203,6 +233,7 @@ function applyRoomState(room) {
   processSoundCues(room);
   state.room = room;
   state.board = room.board;
+  syncPendingMove();
 
   elements.matchStatus.textContent = getMatchStatus(room);
   elements.moveCount.textContent = room.moveCount;
@@ -378,6 +409,7 @@ function syncControls() {
   elements.enterButton.disabled = state.connected && state.joined;
   elements.copyLinkButton.disabled = false;
   elements.resetButton.disabled = !isPlayer || !state.connected;
+  elements.confirmMoveButton.disabled = state.pendingMoveIndex === null || !state.connected;
   elements.chatInput.disabled = !inGame || !state.connected;
 }
 
@@ -425,6 +457,7 @@ function drawBoard() {
 
   drawStarPoints(padding, gap);
   drawStones(padding, gap);
+  drawPendingMove(padding, gap);
   drawHover(padding, gap);
   drawWinningLine(padding, gap);
 }
@@ -487,6 +520,7 @@ function drawStone(x, y, radius, color) {
 function drawHover(padding, gap) {
   if (state.hoverIndex === null || state.board[state.hoverIndex]) return;
   if (!state.room || state.room.turn !== state.myRole || state.room.winner || state.room.draw) return;
+  if (state.hoverIndex === state.pendingMoveIndex) return;
 
   const x = padding + (state.hoverIndex % size) * gap;
   const y = padding + Math.floor(state.hoverIndex / size) * gap;
@@ -494,6 +528,27 @@ function drawHover(padding, gap) {
   ctx.arc(x, y, gap * 0.41, 0, Math.PI * 2);
   ctx.fillStyle = state.myRole === "black" ? "rgba(5, 6, 7, 0.28)" : "rgba(255, 255, 255, 0.62)";
   ctx.fill();
+}
+
+function drawPendingMove(padding, gap) {
+  if (state.pendingMoveIndex === null || !canPlaceAt(state.pendingMoveIndex)) return;
+
+  const x = padding + (state.pendingMoveIndex % size) * gap;
+  const y = padding + Math.floor(state.pendingMoveIndex / size) * gap;
+  const radius = gap * 0.43;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fillStyle = state.myRole === "black" ? "rgba(5, 6, 7, 0.45)" : "rgba(255, 255, 255, 0.76)";
+  ctx.fill();
+  ctx.lineWidth = Math.max(3, gap * 0.1);
+  ctx.strokeStyle = "#b3343d";
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(x, y, radius + gap * 0.14, 0, Math.PI * 2);
+  ctx.strokeStyle = "rgba(179, 52, 61, 0.38)";
+  ctx.stroke();
+  ctx.restore();
 }
 
 function drawWinningLine(padding, gap) {
@@ -511,6 +566,71 @@ function drawWinningLine(padding, gap) {
     else ctx.lineTo(x, y);
   }
   ctx.stroke();
+}
+
+function shouldConfirmMove() {
+  return window.matchMedia("(pointer: coarse), (max-width: 680px)").matches;
+}
+
+function setPendingMove(index) {
+  if (!canPlaceAt(index)) {
+    showToast(getMoveBlockReason(index));
+    return;
+  }
+
+  state.pendingMoveIndex = index;
+  syncPendingMove();
+  drawBoard();
+}
+
+function clearPendingMove() {
+  state.pendingMoveIndex = null;
+  syncPendingMove();
+  drawBoard();
+}
+
+function syncPendingMove() {
+  const index = state.pendingMoveIndex;
+  const show = shouldConfirmMove() && index !== null && canPlaceAt(index);
+  elements.confirmMoveCard.classList.toggle("visible", show);
+
+  if (!show) {
+    if (index !== null && !canPlaceAt(index)) {
+      state.pendingMoveIndex = null;
+    }
+    elements.pendingMoveText.textContent = "请选择位置";
+    elements.confirmMoveButton.disabled = true;
+    return;
+  }
+
+  const row = Math.floor(index / size) + 1;
+  const column = (index % size) + 1;
+  elements.pendingMoveText.textContent = `${roleNames[state.myRole]} · ${column}, ${row}`;
+  elements.confirmMoveButton.disabled = !state.connected;
+}
+
+function canPlaceAt(index) {
+  return (
+    Number.isInteger(index) &&
+    index >= 0 &&
+    index < state.board.length &&
+    state.board[index] === 0 &&
+    state.room &&
+    !state.room.winner &&
+    !state.room.draw &&
+    state.room.turn === state.myRole &&
+    ["black", "white"].includes(state.myRole)
+  );
+}
+
+function getMoveBlockReason(index) {
+  if (!state.joined) return "请先进入对局。";
+  if (state.myRole === "watcher") return "观战不能落子。";
+  if (!state.room?.players.black || !state.room?.players.white) return "等待另一位玩家进入。";
+  if (state.room?.winner || state.room?.draw) return "这一局已经结束。";
+  if (index !== null && state.board[index]) return "这里已经有棋子了。";
+  if (state.room?.turn !== state.myRole) return "现在还没有轮到你。";
+  return "这个位置不能落子。";
 }
 
 function getIndexFromEvent(event) {

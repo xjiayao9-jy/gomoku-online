@@ -28,6 +28,17 @@
           <canvas id="boardCanvas" width="900" height="900" aria-label="五子棋棋盘"></canvas>
         </div>
 
+        <div class="confirm-move-card" id="confirmMoveCard" aria-live="polite">
+          <div>
+            <span>预览落点</span>
+            <strong id="pendingMoveText">请选择位置</strong>
+          </div>
+          <div class="confirm-move-actions">
+            <button class="secondary-button" id="cancelMoveButton" type="button">取消</button>
+            <button class="primary-button" id="confirmMoveButton" type="button">确认落子</button>
+          </div>
+        </div>
+
         <div class="actions">
           <button class="icon-button" id="copyLinkButton" type="button" title="复制对局链接" aria-label="复制对局链接">
             <span aria-hidden="true">⛓</span>
