@@ -15,6 +15,19 @@ const elements = {
   pendingMoveText: document.querySelector("#pendingMoveText"),
   confirmMoveButton: document.querySelector("#confirmMoveButton"),
   cancelMoveButton: document.querySelector("#cancelMoveButton"),
+  clearRecordButton: document.querySelector("#clearRecordButton"),
+  recordWinsLosses: document.querySelector("#recordWinsLosses"),
+  currentStreak: document.querySelector("#currentStreak"),
+  bestStreak: document.querySelector("#bestStreak"),
+  matchHistory: document.querySelector("#matchHistory"),
+  resultOverlay: document.querySelector("#resultOverlay"),
+  confettiLayer: document.querySelector("#confettiLayer"),
+  resultCard: document.querySelector("#resultCard"),
+  resultKicker: document.querySelector("#resultKicker"),
+  resultTitle: document.querySelector("#resultTitle"),
+  resultMessage: document.querySelector("#resultMessage"),
+  resultCloseButton: document.querySelector("#resultCloseButton"),
+  resultResetButton: document.querySelector("#resultResetButton"),
   matchStatus: document.querySelector("#matchStatus"),
   blackPlayer: document.querySelector("#blackPlayer"),
   whitePlayer: document.querySelector("#whitePlayer"),
@@ -46,7 +59,8 @@ const state = {
   lastWinner: null,
   lastTurn: null,
   lastTimeoutCount: null,
-  lastCountdownSecond: null
+  lastCountdownSecond: null,
+  lastResultKey: null
 };
 
 const audio = {
@@ -64,11 +78,13 @@ const roleNames = {
 
 const savedName = localStorage.getItem("gomokuName");
 const clientKey = getClientKey();
+const matchRecord = loadMatchRecord();
 if (savedName) elements.nameInput.value = savedName;
 
 drawBoard();
 syncControls();
 updateSoundButton();
+renderMatchRecord();
 setInterval(refreshTimer, 200);
 
 elements.playForm.addEventListener("submit", event => {
@@ -119,15 +135,12 @@ canvas.addEventListener("mouseleave", () => {
   drawBoard();
 });
 
-canvas.addEventListener("click", event => {
+canvas.addEventListener("pointerup", event => {
+  event.preventDefault();
   unlockAudio();
   const index = getIndexFromEvent(event);
   if (index === null) return;
-  if (shouldConfirmMove()) {
-    setPendingMove(index);
-    return;
-  }
-  send({ type: "move", index });
+  setPendingMove(index);
 });
 
 elements.confirmMoveButton.addEventListener("click", () => {
@@ -144,12 +157,24 @@ elements.confirmMoveButton.addEventListener("click", () => {
 
 elements.cancelMoveButton.addEventListener("click", clearPendingMove);
 
+elements.clearRecordButton.addEventListener("click", () => {
+  Object.assign(matchRecord, makeEmptyMatchRecord());
+  saveMatchRecord();
+  renderMatchRecord();
+  showToast("本机战绩已清空。");
+});
+
+elements.resultCloseButton.addEventListener("click", () => {
+  hideResultPrompt();
+});
+
+elements.resultResetButton.addEventListener("click", () => {
+  hideResultPrompt();
+  send({ type: "reset" });
+});
+
 window.addEventListener("resize", () => {
-  if (!shouldConfirmMove()) {
-    clearPendingMove();
-  } else {
-    syncPendingMove();
-  }
+  syncPendingMove();
   drawBoard();
 });
 
@@ -234,6 +259,7 @@ function applyRoomState(room) {
   state.room = room;
   state.board = room.board;
   syncPendingMove();
+  processResultState(room);
 
   elements.matchStatus.textContent = getMatchStatus(room);
   elements.moveCount.textContent = room.moveCount;
@@ -273,6 +299,22 @@ function processSoundCues(room) {
     playSound(room.winReason === "timeout" ? "timeout" : "win");
   }
   state.lastWinner = room.winner || null;
+}
+
+function processResultState(room) {
+  const resultKey = getResultKey(room);
+  if (!resultKey) {
+    state.lastResultKey = null;
+    hideResultPrompt(false);
+    return;
+  }
+
+  if (state.lastResultKey === resultKey) return;
+  state.lastResultKey = resultKey;
+
+  const outcome = getMyOutcome(room);
+  recordFinishedMatch(room, outcome, resultKey);
+  showResultPrompt(room, outcome);
 }
 
 function renderPlayer(container, role, player, turn) {
@@ -409,6 +451,7 @@ function syncControls() {
   elements.enterButton.disabled = state.connected && state.joined;
   elements.copyLinkButton.disabled = false;
   elements.resetButton.disabled = !isPlayer || !state.connected;
+  elements.resultResetButton.disabled = !isPlayer || !state.connected;
   elements.confirmMoveButton.disabled = state.pendingMoveIndex === null || !state.connected;
   elements.chatInput.disabled = !inGame || !state.connected;
 }
@@ -569,7 +612,7 @@ function drawWinningLine(padding, gap) {
 }
 
 function shouldConfirmMove() {
-  return window.matchMedia("(pointer: coarse), (max-width: 680px)").matches;
+  return true;
 }
 
 function setPendingMove(index) {
@@ -678,6 +721,168 @@ function showToast(message) {
   showToast.timer = setTimeout(() => {
     elements.toast.classList.remove("show");
   }, 2200);
+}
+
+function getResultKey(room) {
+  if (!room?.winner && !room?.draw) return null;
+  const result = room.winner || "draw";
+  const lastMoveAt = room.lastMove?.at || "no-last-move";
+  return `${room.code}:${result}:${room.moveCount}:${lastMoveAt}`;
+}
+
+function getMyOutcome(room) {
+  if (room.draw) return "draw";
+  if (!room.winner) return null;
+  if (state.myRole === room.winner) return "win";
+  if (["black", "white"].includes(state.myRole)) return "loss";
+  return "watcher";
+}
+
+function showResultPrompt(room, outcome) {
+  const winnerName = room.players?.[room.winner]?.name || roleNames[room.winner] || "赢家";
+  elements.resultCard.className = `result-card ${outcome || "watcher"}`;
+  elements.resultOverlay.classList.add("visible");
+
+  if (outcome === "win") {
+    elements.resultKicker.textContent = `连胜 ${matchRecord.currentStreak}`;
+    elements.resultTitle.textContent = "你赢了🥳";
+    elements.resultMessage.textContent = `漂亮，${roleNames[state.myRole]}五连达成。`;
+    burstConfetti();
+    playSound("win");
+  } else if (outcome === "loss") {
+    elements.resultKicker.textContent = "Game Over";
+    elements.resultTitle.textContent = "你输了，菜就多练😝";
+    elements.resultMessage.textContent = `${winnerName} 完成五连。下一局把场子找回来。`;
+    playSound("timeoutPass");
+  } else if (outcome === "draw") {
+    elements.resultKicker.textContent = "Draw";
+    elements.resultTitle.textContent = "平局";
+    elements.resultMessage.textContent = "棋盘已满，这局谁也别装。";
+  } else {
+    elements.resultKicker.textContent = "Game Over";
+    elements.resultTitle.textContent = `${winnerName}赢了`;
+    elements.resultMessage.textContent = `${roleNames[room.winner]}五连达成。`;
+  }
+
+  syncControls();
+}
+
+function hideResultPrompt(clearConfetti = true) {
+  elements.resultOverlay.classList.remove("visible");
+  if (clearConfetti) {
+    elements.confettiLayer.replaceChildren();
+  }
+}
+
+function burstConfetti() {
+  elements.confettiLayer.replaceChildren();
+  const colors = ["#176d65", "#d9893d", "#f2c94c", "#b3343d", "#2f80ed", "#ffffff"];
+  for (let index = 0; index < 90; index += 1) {
+    const piece = document.createElement("i");
+    piece.style.setProperty("--x", `${Math.random() * 100}%`);
+    piece.style.setProperty("--delay", `${Math.random() * 0.28}s`);
+    piece.style.setProperty("--duration", `${1.8 + Math.random() * 1.25}s`);
+    piece.style.setProperty("--rotate", `${Math.random() * 720 - 360}deg`);
+    piece.style.setProperty("--color", colors[index % colors.length]);
+    piece.style.setProperty("--w", `${6 + Math.random() * 7}px`);
+    piece.style.setProperty("--h", `${9 + Math.random() * 12}px`);
+    elements.confettiLayer.append(piece);
+  }
+
+  clearTimeout(burstConfetti.timer);
+  burstConfetti.timer = setTimeout(() => {
+    elements.confettiLayer.replaceChildren();
+  }, 3600);
+}
+
+function makeEmptyMatchRecord() {
+  return {
+    wins: 0,
+    losses: 0,
+    draws: 0,
+    currentStreak: 0,
+    bestStreak: 0,
+    history: []
+  };
+}
+
+function loadMatchRecord() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem("gomokuMatchRecord") || "null");
+    return {
+      ...makeEmptyMatchRecord(),
+      ...(parsed && typeof parsed === "object" ? parsed : {}),
+      history: Array.isArray(parsed?.history) ? parsed.history.slice(0, 12) : []
+    };
+  } catch {
+    return makeEmptyMatchRecord();
+  }
+}
+
+function saveMatchRecord() {
+  localStorage.setItem("gomokuMatchRecord", JSON.stringify(matchRecord));
+}
+
+function recordFinishedMatch(room, outcome, resultKey) {
+  if (!["win", "loss", "draw"].includes(outcome)) return;
+  if (matchRecord.history.some(entry => entry.id === resultKey)) {
+    renderMatchRecord();
+    return;
+  }
+
+  if (outcome === "win") {
+    matchRecord.wins += 1;
+    matchRecord.currentStreak += 1;
+    matchRecord.bestStreak = Math.max(matchRecord.bestStreak, matchRecord.currentStreak);
+  } else if (outcome === "loss") {
+    matchRecord.losses += 1;
+    matchRecord.currentStreak = 0;
+  } else {
+    matchRecord.draws += 1;
+    matchRecord.currentStreak = 0;
+  }
+
+  const opponentRole = state.myRole === "black" ? "white" : "black";
+  const opponentName = room.players?.[opponentRole]?.name || "对手";
+  matchRecord.history.unshift({
+    id: resultKey,
+    result: outcome,
+    role: state.myRole,
+    opponent: opponentName,
+    moves: room.moveCount,
+    at: Date.now()
+  });
+  matchRecord.history = matchRecord.history.slice(0, 12);
+  saveMatchRecord();
+  renderMatchRecord();
+}
+
+function renderMatchRecord() {
+  elements.recordWinsLosses.textContent = `${matchRecord.wins} / ${matchRecord.losses} / ${matchRecord.draws}`;
+  elements.currentStreak.textContent = matchRecord.currentStreak;
+  elements.bestStreak.textContent = matchRecord.bestStreak;
+  elements.matchHistory.replaceChildren();
+
+  if (matchRecord.history.length === 0) {
+    const empty = document.createElement("li");
+    empty.textContent = "还没有战绩";
+    elements.matchHistory.append(empty);
+    return;
+  }
+
+  for (const entry of matchRecord.history) {
+    const item = document.createElement("li");
+    item.className = `history-${entry.result}`;
+    const resultText = entry.result === "win" ? "胜" : entry.result === "loss" ? "负" : "平";
+    item.textContent = `${resultText} · vs ${entry.opponent} · ${entry.moves}手 · ${formatMatchTime(entry.at)}`;
+    elements.matchHistory.append(item);
+  }
+}
+
+function formatMatchTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "刚刚";
+  return date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" });
 }
 
 function unlockAudio() {

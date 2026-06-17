@@ -99,6 +99,28 @@
           <ol class="move-list" id="moveList"></ol>
         </div>
 
+        <div class="record-card">
+          <div class="panel-title-row">
+            <div class="panel-title">个人战绩</div>
+            <button class="text-button" id="clearRecordButton" type="button">清空</button>
+          </div>
+          <div class="record-grid">
+            <div>
+              <span>胜 / 负 / 平</span>
+              <strong id="recordWinsLosses">0 / 0 / 0</strong>
+            </div>
+            <div>
+              <span>当前 Streak</span>
+              <strong id="currentStreak">0</strong>
+            </div>
+            <div>
+              <span>最高 Streak</span>
+              <strong id="bestStreak">0</strong>
+            </div>
+          </div>
+          <ol class="match-history" id="matchHistory"></ol>
+        </div>
+
         <div class="chat-card">
           <div class="panel-title">对局消息</div>
           <div class="chat-log" id="chatLog"></div>
@@ -109,6 +131,19 @@
         </div>
       </aside>
     </main>
+
+    <div class="result-overlay" id="resultOverlay" aria-live="assertive" aria-modal="true" role="dialog">
+      <div class="confetti-layer" id="confettiLayer" aria-hidden="true"></div>
+      <div class="result-card" id="resultCard">
+        <p class="result-kicker" id="resultKicker">Game Over</p>
+        <h2 id="resultTitle">本局结束</h2>
+        <p id="resultMessage">五连达成。</p>
+        <div class="result-actions">
+          <button class="secondary-button" id="resultCloseButton" type="button">先看看棋盘</button>
+          <button class="primary-button" id="resultResetButton" type="button">再来一局</button>
+        </div>
+      </div>
+    </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="/app.js" type="module"></script>
