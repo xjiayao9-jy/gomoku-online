@@ -38,6 +38,11 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 .app-shell {
   width: min(1440px, 100%);
   min-height: 100vh;
@@ -211,8 +216,14 @@ canvas {
 .actions {
   min-height: 46px;
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   gap: 10px;
+}
+
+.actions .secondary-button,
+.actions .primary-button {
+  padding: 0 16px;
 }
 
 .side-panel {
@@ -564,7 +575,8 @@ input:focus {
   transform: translateX(-50%) translateY(0);
 }
 
-.result-overlay {
+.result-overlay,
+.undo-overlay {
   position: fixed;
   inset: 0;
   z-index: 30;
@@ -575,7 +587,8 @@ input:focus {
   backdrop-filter: blur(5px);
 }
 
-.result-overlay.visible {
+.result-overlay.visible,
+.undo-overlay.visible {
   display: grid;
 }
 
@@ -609,6 +622,33 @@ input:focus {
   text-align: center;
   transform: translateY(10px) scale(0.98);
   animation: result-pop 220ms ease forwards;
+}
+
+.undo-card {
+  position: relative;
+  width: min(420px, calc(100vw - 34px));
+  border: 1px solid rgba(179, 52, 61, 0.28);
+  border-radius: 8px;
+  padding: 26px;
+  background:
+    linear-gradient(180deg, rgba(179, 52, 61, 0.13), transparent 44%),
+    rgba(255, 255, 255, 0.96);
+  box-shadow: 0 24px 70px rgba(23, 32, 42, 0.26);
+  text-align: center;
+  transform: translateY(10px) scale(0.98);
+  animation: result-pop 220ms ease forwards;
+}
+
+.undo-card h2 {
+  margin: 0;
+  color: var(--danger);
+  font-size: 1.7rem;
+  line-height: 1.1;
+}
+
+.undo-card .primary-button {
+  margin-top: 20px;
+  min-width: 120px;
 }
 
 .result-card.win {
@@ -747,6 +787,14 @@ input:focus {
 
   .result-card h2 {
     font-size: 1.8rem;
+  }
+
+  .undo-card {
+    padding: 22px;
+  }
+
+  .undo-card h2 {
+    font-size: 1.35rem;
   }
 
   .result-actions {

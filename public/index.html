@@ -44,6 +44,7 @@
             <span aria-hidden="true">⛓</span>
           </button>
           <button class="icon-button" id="soundButton" type="button" title="关闭音效" aria-label="关闭音效">♪</button>
+          <button class="secondary-button" id="undoButton" type="button">悔棋</button>
           <button class="primary-button" id="resetButton" type="button">再来一局</button>
         </div>
       </section>
@@ -142,6 +143,14 @@
           <button class="secondary-button" id="resultCloseButton" type="button">先看看棋盘</button>
           <button class="primary-button" id="resultResetButton" type="button">再来一局</button>
         </div>
+      </div>
+    </div>
+
+    <div class="undo-overlay" id="undoOverlay" aria-live="assertive" aria-modal="true" role="dialog">
+      <div class="undo-card">
+        <p class="result-kicker">Takeback</p>
+        <h2 id="undoPromptText">stop 悔棋 u cunt</h2>
+        <button class="primary-button" id="undoPromptCloseButton" type="button">知道了</button>
       </div>
     </div>
 

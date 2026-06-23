@@ -282,6 +282,11 @@ function handleMessage(client, message) {
     return;
   }
 
+  if (message.type === "undo") {
+    undoMove(client);
+    return;
+  }
+
   if (message.type === "chat") {
     addChat(client, message.text);
   }
@@ -424,6 +429,12 @@ function resetRoom(client) {
   const room = getClientRoom(client);
   if (!room || !["black", "white"].includes(client.role)) return;
 
+  if (!room.winner && !room.draw) {
+    send(client, { type: "error", message: "本局结束后才能再来一局。" });
+    return;
+  }
+
+  assignLoserAsBlack(room);
   resetBoard(room);
   ensureTurnTimer(room, true);
   broadcast(room, {
@@ -431,6 +442,82 @@ function resetRoom(client) {
     message: `${client.name} 开始了新一局。`
   });
   broadcastState(room);
+}
+
+function undoMove(client) {
+  const room = getClientRoom(client);
+  if (!room || !["black", "white"].includes(client.role)) return;
+
+  if (!bothPlayersReady(room)) {
+    send(client, { type: "error", message: "等待另一位玩家进入。" });
+    return;
+  }
+
+  if (room.winner || room.draw) {
+    send(client, { type: "error", message: "本局结束后不能悔棋。" });
+    return;
+  }
+
+  const lastMove = room.moves.at(-1);
+  if (!lastMove) {
+    send(client, { type: "error", message: "还没有可以悔的棋。" });
+    return;
+  }
+
+  if (lastMove.role !== client.role) {
+    send(client, { type: "error", message: "只能悔自己刚下的上一手。" });
+    return;
+  }
+
+  room.board[lastMove.index] = 0;
+  room.moves.pop();
+  room.turn = client.role;
+  room.winningLine = [];
+  room.winReason = null;
+  startTurnTimer(room);
+
+  send(client, { type: "undoPrompt", message: "stop 悔棋 u cunt" });
+  broadcast(room, {
+    type: "notice",
+    message: `${client.name} 悔棋了。`
+  });
+  broadcastState(room);
+}
+
+function assignLoserAsBlack(room) {
+  if (!room.winner || room.draw) return;
+
+  const loserRole = room.winner === "black" ? "white" : "black";
+  const loserId = room.players[loserRole];
+  const winnerId = room.players[room.winner];
+  if (!loserId || !winnerId) return;
+
+  if (loserRole !== "black") {
+    room.players.black = loserId;
+    room.players.white = winnerId;
+
+    const loser = clients.get(loserId);
+    const winner = clients.get(winnerId);
+    if (loser) loser.role = "black";
+    if (winner) winner.role = "white";
+  }
+
+  const nextBlack = clients.get(room.players.black);
+  const nextWhite = clients.get(room.players.white);
+  if (nextBlack) {
+    send(nextBlack, {
+      type: "roleChanged",
+      role: "black",
+      message: "上局失利，下局执黑棋。"
+    });
+  }
+  if (nextWhite) {
+    send(nextWhite, {
+      type: "roleChanged",
+      role: "white",
+      message: "下局执白棋。"
+    });
+  }
 }
 
 function addChat(client, text) {

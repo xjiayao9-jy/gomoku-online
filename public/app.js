@@ -10,6 +10,7 @@ const elements = {
   enterButton: document.querySelector("#enterButton"),
   copyLinkButton: document.querySelector("#copyLinkButton"),
   resetButton: document.querySelector("#resetButton"),
+  undoButton: document.querySelector("#undoButton"),
   soundButton: document.querySelector("#soundButton"),
   confirmMoveCard: document.querySelector("#confirmMoveCard"),
   pendingMoveText: document.querySelector("#pendingMoveText"),
@@ -28,6 +29,9 @@ const elements = {
   resultMessage: document.querySelector("#resultMessage"),
   resultCloseButton: document.querySelector("#resultCloseButton"),
   resultResetButton: document.querySelector("#resultResetButton"),
+  undoOverlay: document.querySelector("#undoOverlay"),
+  undoPromptText: document.querySelector("#undoPromptText"),
+  undoPromptCloseButton: document.querySelector("#undoPromptCloseButton"),
   matchStatus: document.querySelector("#matchStatus"),
   blackPlayer: document.querySelector("#blackPlayer"),
   whitePlayer: document.querySelector("#whitePlayer"),
@@ -106,7 +110,21 @@ elements.copyLinkButton.addEventListener("click", async () => {
 });
 
 elements.resetButton.addEventListener("click", () => {
+  if (!canResetRound()) {
+    showToast("本局结束后才能再来一局。");
+    return;
+  }
   send({ type: "reset" });
+});
+
+elements.undoButton.addEventListener("click", () => {
+  unlockAudio();
+  if (!canUndoMove()) {
+    showToast(getUndoBlockReason());
+    return;
+  }
+  clearPendingMove();
+  send({ type: "undo" });
 });
 
 elements.soundButton.addEventListener("click", () => {
@@ -126,7 +144,8 @@ elements.chatForm.addEventListener("submit", event => {
 });
 
 canvas.addEventListener("mousemove", event => {
-  state.hoverIndex = getIndexFromEvent(event);
+  const index = getIndexFromEvent(event);
+  state.hoverIndex = canPlaceAt(index) ? index : null;
   drawBoard();
 });
 
@@ -169,9 +188,15 @@ elements.resultCloseButton.addEventListener("click", () => {
 });
 
 elements.resultResetButton.addEventListener("click", () => {
+  if (!canResetRound()) {
+    showToast("本局结束后才能再来一局。");
+    return;
+  }
   hideResultPrompt();
   send({ type: "reset" });
 });
+
+elements.undoPromptCloseButton.addEventListener("click", hideUndoPrompt);
 
 window.addEventListener("resize", () => {
   syncPendingMove();
@@ -231,6 +256,19 @@ function handleServerMessage(message) {
     state.joined = true;
     showToast(message.role === "watcher" ? "当前已有两位玩家，已进入观战。" : `已进入，执${roleNames[message.role]}。`);
     syncControls();
+    return;
+  }
+
+  if (message.type === "roleChanged") {
+    state.myRole = message.role;
+    showToast(message.message || `下局你执${roleNames[message.role]}。`);
+    clearPendingMove();
+    syncControls();
+    return;
+  }
+
+  if (message.type === "undoPrompt") {
+    showUndoPrompt(message.message);
     return;
   }
 
@@ -448,12 +486,33 @@ function updateTimerDisplay(value, label, warning) {
 function syncControls() {
   const inGame = Boolean(state.room?.code);
   const isPlayer = ["black", "white"].includes(state.myRole);
+  const canReset = canResetRound();
+  const canUndo = canUndoMove();
   elements.enterButton.disabled = state.connected && state.joined;
   elements.copyLinkButton.disabled = false;
-  elements.resetButton.disabled = !isPlayer || !state.connected;
-  elements.resultResetButton.disabled = !isPlayer || !state.connected;
+  elements.resetButton.disabled = !canReset;
+  elements.resultResetButton.disabled = !canReset;
+  elements.undoButton.disabled = !canUndo;
   elements.confirmMoveButton.disabled = state.pendingMoveIndex === null || !state.connected;
   elements.chatInput.disabled = !inGame || !state.connected;
+}
+
+function canResetRound() {
+  const isPlayer = ["black", "white"].includes(state.myRole);
+  return Boolean(isPlayer && state.connected && (state.room?.winner || state.room?.draw));
+}
+
+function canUndoMove() {
+  const isPlayer = ["black", "white"].includes(state.myRole);
+  return Boolean(
+    isPlayer &&
+      state.connected &&
+      state.room?.players.black &&
+      state.room?.players.white &&
+      !state.room?.winner &&
+      !state.room?.draw &&
+      state.room?.lastMove?.role === state.myRole
+  );
 }
 
 function updateConnection(text, offline = false) {
@@ -617,11 +676,16 @@ function shouldConfirmMove() {
 
 function setPendingMove(index) {
   if (!canPlaceAt(index)) {
+    state.hoverIndex = null;
+    state.pendingMoveIndex = null;
+    syncPendingMove();
+    drawBoard();
     showToast(getMoveBlockReason(index));
     return;
   }
 
   state.pendingMoveIndex = index;
+  state.hoverIndex = null;
   syncPendingMove();
   drawBoard();
 }
@@ -674,6 +738,16 @@ function getMoveBlockReason(index) {
   if (index !== null && state.board[index]) return "这里已经有棋子了。";
   if (state.room?.turn !== state.myRole) return "现在还没有轮到你。";
   return "这个位置不能落子。";
+}
+
+function getUndoBlockReason() {
+  if (!state.joined) return "请先进入对局。";
+  if (state.myRole === "watcher") return "观战不能悔棋。";
+  if (!state.room?.players.black || !state.room?.players.white) return "等待另一位玩家进入。";
+  if (state.room?.winner || state.room?.draw) return "本局结束后不能悔棋。";
+  if (!state.room?.lastMove) return "还没有可以悔的棋。";
+  if (state.room.lastMove.role !== state.myRole) return "只能悔自己刚下的上一手。";
+  return "现在不能悔棋。";
 }
 
 function getIndexFromEvent(event) {
@@ -772,6 +846,15 @@ function hideResultPrompt(clearConfetti = true) {
   if (clearConfetti) {
     elements.confettiLayer.replaceChildren();
   }
+}
+
+function showUndoPrompt(message = "stop 悔棋 u cunt") {
+  elements.undoPromptText.textContent = message;
+  elements.undoOverlay.classList.add("visible");
+}
+
+function hideUndoPrompt() {
+  elements.undoOverlay.classList.remove("visible");
 }
 
 function burstConfetti() {
