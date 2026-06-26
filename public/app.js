@@ -562,6 +562,7 @@ function drawBoard() {
   drawPendingMove(padding, gap);
   drawHover(padding, gap);
   drawWinningLine(padding, gap);
+  drawLastMoveMarker(padding, gap);
 }
 
 function drawStarPoints(padding, gap) {
@@ -630,6 +631,32 @@ function drawHover(padding, gap) {
   ctx.arc(x, y, gap * 0.41, 0, Math.PI * 2);
   ctx.fillStyle = state.myRole === "black" ? "rgba(5, 6, 7, 0.28)" : "rgba(255, 255, 255, 0.62)";
   ctx.fill();
+}
+
+function drawLastMoveMarker(padding, gap) {
+  const lastMove = state.room?.lastMove;
+  if (!lastMove || !Number.isInteger(lastMove.index) || !state.board[lastMove.index]) return;
+
+  const x = padding + (lastMove.index % size) * gap;
+  const y = padding + Math.floor(lastMove.index / size) * gap;
+  const radius = gap * 0.5;
+
+  ctx.save();
+  ctx.shadowColor = "rgba(242, 201, 76, 0.7)";
+  ctx.shadowBlur = gap * 0.18;
+  ctx.strokeStyle = "#f2c94c";
+  ctx.lineWidth = Math.max(2.5, gap * 0.07);
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+  ctx.lineWidth = Math.max(1, gap * 0.025);
+  ctx.beginPath();
+  ctx.arc(x, y, radius - gap * 0.05, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
 }
 
 function drawPendingMove(padding, gap) {
